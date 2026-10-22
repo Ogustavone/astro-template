@@ -1,0 +1,60 @@
+---
+interface Props {
+  prefix: string;
+  words: string[];
+  duration?: number;
+  class?: string;
+  textColor?: string;
+}
+
+const {
+  prefix,
+  words,
+  duration = 2.5,
+  class: className,
+  textColor = "text-emerald-400",
+} = Astro.props;
+
+const list = [...words, words[0]];
+const n = words.length;
+const step = 100 / n;
+
+const frames = Array.from({ length: n }, (_, i) => {
+  const k = i + 1;
+  const start = ((k - 1) * step + step * 0.4).toFixed(2);
+  const end = (k * step).toFixed(2);
+  return `${start}%{transform:translateY(-${k * 100}%)}${end}%{transform:translateY(-${k * 100}%)}`;
+}).join("");
+
+const keyframes = `@keyframes words-spin{${frames}}
+@media (prefers-reduced-motion:reduce){.word-item{animation:none!important}}`;
+---
+
+<style is:inline set:html={keyframes}></style>
+
+<span
+  class:list={[
+    "inline-flex h-[1.5em] items-center gap-2 leading-[1.5em]",
+    className,
+  ]}
+  style={`--dur:${duration * n}s`}
+  role="status"
+  aria-label={`${prefix} ${words.join(", ")}`}
+>
+  <span aria-hidden="true">{prefix}</span>
+
+  <span class="h-[1.5em] overflow-hidden" aria-hidden="true">
+    {
+      list.map((word) => (
+        <span
+          class:list={[
+            "word-item block h-[1.5em] animate-[words-spin_var(--dur)_ease-in-out_infinite]",
+            textColor,
+          ]}
+        >
+          {word}
+        </span>
+      ))
+    }
+  </span>
+</span>

@@ -1,0 +1,236 @@
+---
+interface Props {
+  commands: string[];
+  outputs?: Record<number, string[]>;
+  typingSpeed?: number;
+  delayBetweenCommands?: number;
+  title?: string;
+  host?: string;
+  loop?: boolean;
+  class?: string;
+}
+
+const {
+  commands,
+  outputs = {},
+  typingSpeed = 45,
+  delayBetweenCommands = 1000,
+  title = "Terminal — bash",
+  host = "desktop",
+  loop = false,
+  class: className = "",
+} = Astro.props;
+
+// Total de linhas -> reserva altura para evitar layout shift
+const totalLines =
+  commands.length +
+  Object.values(outputs).reduce((sum, lines) => sum + lines.length, 0) +
+  1; // prompt final com cursor
+
+// Versão estática (acessibilidade / sem JS)
+const staticLines = commands.flatMap((cmd, i) => [
+  `${host}:~$ ${cmd}`,
+  ...(outputs[i] ?? []),
+]);
+
+const config = JSON.stringify({
+  commands,
+  outputs,
+  typingSpeed,
+  delayBetweenCommands,
+  host,
+  loop,
+});
+---
+
+<div
+  data-terminal
+  data-config={config}
+  class:list={[
+    "mx-auto w-full max-w-3xl overflow-hidden rounded-xl border border-white/10",
+    "bg-[#141414] shadow-2xl shadow-black/40 ring-1 ring-black/60",
+    className,
+  ]}
+>
+  <!-- Barra de título -->
+  <header
+    class="relative flex h-10 items-center border-b border-white/5 bg-[#262626] px-4"
+  >
+    <div class="flex items-center gap-2" aria-hidden="true">
+      <span class="size-3 rounded-full bg-[#ff5f57]"></span>
+      <span class="size-3 rounded-full bg-[#febc2e]"></span>
+      <span class="size-3 rounded-full bg-[#28c840]"></span>
+    </div>
+    <span
+      class="pointer-events-none absolute inset-x-0 text-center text-sm text-neutral-400 select-none"
+    >
+      {title}
+    </span>
+  </header>
+
+  <!-- Corpo do terminal -->
+  <div
+    class="relative p-5 font-mono text-[13px] leading-6 sm:text-sm"
+    style={`min-height: calc(${totalLines} * 1.5rem + 2.5rem)`}
+  >
+    <!-- Texto para leitores de tela -->
+    <ul class="sr-only">
+      {staticLines.map((line) => <li>{line}</li>)}
+    </ul>
+
+    <!-- Área animada (preenchida via JS) -->
+    <div
+      data-terminal-body
+      class="whitespace-pre-wrap wrap-break-word"
+      aria-hidden="true"
+    >
+    </div>
+
+    <!-- Fallback sem JS -->
+    <noscript>
+      <div class="whitespace-pre-wrap text-neutral-300">
+        {staticLines.join("\n")}
+      </div>
+    </noscript>
+  </div>
+</div>
+
+<style>
+  @keyframes terminal-blink {
+    0%,
+    49% {
+      opacity: 1;
+    }
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+  .terminal-cursor {
+    display: inline-block;
+    width: 0.55em;
+    height: 1.1em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: #d4d4d4;
+    animation: terminal-blink 1s step-end infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .terminal-cursor {
+      animation: none;
+    }
+  }
+</style>
+
+<script>
+  type Config = {
+    commands: string[];
+    outputs: Record<string, string[]>;
+    typingSpeed: number;
+    delayBetweenCommands: number;
+    host: string;
+    loop: boolean;
+  };
+
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  function el(tag: string, className: string, text = "") {
+    const node = document.createElement(tag);
+    node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
+
+  // Linha de prompt: host em azul, "$" cinza, 1ª palavra do comando em verde, resto em branco
+  function createPromptLine(host: string) {
+    const line = el("div", "");
+    line.append(
+      el("span", "text-sky-400", `${host}:~`),
+      el("span", "text-neutral-400", "$ "),
+    );
+    const first = el("span", "text-emerald-400");
+    const rest = el("span", "text-neutral-100");
+    line.append(first, rest);
+    return { line, first, rest };
+  }
+
+  function setCommandText(first: HTMLElement, rest: HTMLElement, text: string) {
+    const idx = text.indexOf(" ");
+    if (idx === -1) {
+      first.textContent = text;
+      rest.textContent = "";
+    } else {
+      first.textContent = text.slice(0, idx);
+      rest.textContent = text.slice(idx);
+    }
+  }
+
+  async function run(root: HTMLElement) {
+    if (root.dataset.started) return;
+    root.dataset.started = "true";
+    const cfg: Config = JSON.parse(root.dataset.config ?? "{}");
+    const body = root.querySelector<HTMLElement>("[data-terminal-body]")!;
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const cursor = el("span", "terminal-cursor");
+
+    do {
+      body.replaceChildren();
+
+      for (let i = 0; i < cfg.commands.length; i++) {
+        const command = cfg.commands[i];
+        const { line, first, rest } = createPromptLine(cfg.host);
+        body.append(line);
+        line.append(cursor);
+
+        if (reduced) {
+          setCommandText(first, rest, command);
+        } else {
+          for (let c = 1; c <= command.length; c++) {
+            setCommandText(first, rest, command.slice(0, c));
+            await sleep(cfg.typingSpeed);
+          }
+          await sleep(350); // "Enter"
+        }
+
+        cursor.remove();
+
+        for (const out of cfg.outputs[i] ?? []) {
+          body.append(el("div", "text-neutral-400", out));
+          if (!reduced) await sleep(180);
+        }
+
+        if (!reduced && i < cfg.commands.length - 1) {
+          await sleep(cfg.delayBetweenCommands);
+        }
+      }
+
+      // Prompt final com cursor piscando
+      const final = createPromptLine(cfg.host);
+      final.line.append(cursor);
+      body.append(final.line);
+
+      if (cfg.loop && !reduced) await sleep(3500);
+    } while (cfg.loop && !reduced);
+  }
+
+  function init() {
+    const terminals = document.querySelectorAll<HTMLElement>("[data-terminal]");
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          io.unobserve(entry.target);
+          run(entry.target as HTMLElement);
+        }
+      },
+      { threshold: 0.4 },
+    );
+    terminals.forEach((t) => io.observe(t));
+  }
+
+  init();
+  // Suporte ao <ClientRouter /> / View Transitions do Astro
+  document.addEventListener("astro:page-load", init);
+</script>

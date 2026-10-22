@@ -1,0 +1,103 @@
+---
+interface Props {
+  colors?: string[]; // qualquer valor CSS válido, um orbe por cor
+  opacity?: number;
+  class?: string;
+}
+
+const {
+  colors = ["#10b981", "#06b6d4", "#6366f1", "#52525b"],
+  opacity = 0.35,
+  class: className = "",
+} = Astro.props;
+
+const presets = [
+  { pos: "top:-15%;left:-10%", size: 45, dur: 22 },
+  { pos: "top:10%;right:-15%", size: 40, dur: 28 },
+  { pos: "bottom:-20%;left:15%", size: 50, dur: 32 },
+  { pos: "bottom:5%;right:10%", size: 30, dur: 26 },
+];
+
+const orbs = colors.map((color, i) => {
+  const p = presets[i % presets.length];
+  return {
+    style: `${p.pos};width:${p.size}vmax;height:${p.size}vmax;background:${color};animation-name:float-${(i % 4) + 1};animation-duration:${p.dur}s;animation-delay:-${i * 3}s;`,
+  };
+});
+---
+
+<div
+  aria-hidden="true"
+  class:list={[
+    "pointer-events-none fixed inset-0 -z-10 overflow-hidden",
+    className,
+  ]}
+  style={`--o:${opacity};`}
+>
+  {orbs.map((orb) => <div class="orb" style={orb.style} />)}
+</div>
+
+<style>
+  .orb {
+    position: absolute;
+    border-radius: 9999px;
+    filter: blur(120px);
+    opacity: var(--o);
+    will-change: transform;
+    transform: translate3d(0, 0, 0);
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+  }
+
+  @keyframes float-1 {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(12vw, 8vh, 0) scale(1.15);
+    }
+    100% {
+      transform: translate3d(5vw, 18vh, 0) scale(0.95);
+    }
+  }
+  @keyframes float-2 {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(-14vw, 10vh, 0) scale(0.9);
+    }
+    100% {
+      transform: translate3d(-6vw, -8vh, 0) scale(1.1);
+    }
+  }
+  @keyframes float-3 {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(10vw, -12vh, 0) scale(1.1);
+    }
+    100% {
+      transform: translate3d(-8vw, -5vh, 0) scale(0.92);
+    }
+  }
+  @keyframes float-4 {
+    0% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(-10vw, -10vh, 0) scale(1.2);
+    }
+    100% {
+      transform: translate3d(6vw, 6vh, 0) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .orb {
+      animation: none;
+    }
+  }
+</style>

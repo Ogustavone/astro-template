@@ -1,0 +1,220 @@
+---
+import type { ImageMetadata } from "astro";
+
+export interface FabMenuLink {
+  /** Texto exibido ao lado do ícone (e nome acessível do link) */
+  label: string;
+  /** Destino (`https://`, `mailto:`, `tel:`, `sms:`...) */
+  href: string;
+  /** Ícone: import do Astro ou caminho em string (ex: "/github.svg") */
+  icon: ImageMetadata | string;
+  /** Força abrir (ou não) em nova aba. Padrão: nova aba, exceto tel/mailto/sms */
+  newTab?: boolean;
+}
+
+export interface Props {
+  links: FabMenuLink[];
+  /** Lado da tela em que o botão fica. Padrão: "right" */
+  side?: "right" | "left";
+  /** Aria-label do botão fechado. Padrão: "Abrir menu de contato" */
+  openLabel?: string;
+  /** Aria-label do botão aberto. Padrão: "Fechar menu de contato" */
+  closeLabel?: string;
+  /** Classes do botão principal (cor de fundo, hover e sombra) */
+  buttonClass?: string;
+  /** Classes extras no container */
+  class?: string;
+}
+
+const {
+  links,
+  side = "right",
+  openLabel = "Abrir menu de contato",
+  closeLabel = "Fechar menu de contato",
+  buttonClass = "bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30",
+  class: className = "",
+} = Astro.props;
+
+const sideClasses = {
+  right: { container: "right-6 items-end", link: "" },
+  left: { container: "left-6 items-start", link: "flex-row-reverse" },
+} as const;
+
+const src = (icon: FabMenuLink["icon"]) =>
+  typeof icon === "string" ? icon : icon.src;
+const opensNewTab = ({ href, newTab }: FabMenuLink) =>
+  newTab ?? !/^(tel|mailto|sms):/.test(href);
+
+const menuId = `fab-menu-${crypto.randomUUID().slice(0, 8)}`;
+---
+
+<div
+  class:list={[
+    "fixed bottom-6 z-50 flex flex-col",
+    sideClasses[side].container,
+    className,
+  ]}
+  data-fab
+  data-open-label={openLabel}
+  data-close-label={closeLabel}
+>
+  <ul
+    id={menuId}
+    data-fab-menu
+    inert
+    class:list={[
+      "pointer-events-none mb-4 flex origin-bottom translate-y-4 scale-95 flex-col gap-3 opacity-0 transition-all duration-300 ease-out motion-reduce:transition-none",
+      sideClasses[side].container,
+    ]}
+  >
+    {
+      links.map((link) => (
+        <li>
+          <a
+            href={link.href}
+            target={opensNewTab(link) ? "_blank" : undefined}
+            rel={opensNewTab(link) ? "noopener noreferrer" : undefined}
+            class:list={[
+              "group flex items-center gap-3 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500",
+              sideClasses[side].link,
+            ]}
+          >
+            <span class="rounded-full border border-zinc-100 bg-white px-3 py-1 text-sm font-medium text-zinc-600 shadow-sm transition-colors group-hover:text-zinc-900">
+              {link.label}
+            </span>
+
+            <span class="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-100 bg-white shadow-sm transition-transform group-hover:scale-105 motion-reduce:transition-none">
+              <img
+                src={src(link.icon)}
+                alt=""
+                aria-hidden="true"
+                class="h-6 w-6"
+                loading="eager"
+                width="24"
+                height="24"
+              />
+            </span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+
+  <!-- Botão principal -->
+  <button
+    type="button"
+    data-fab-btn
+    aria-label={openLabel}
+    aria-expanded="false"
+    aria-controls={menuId}
+    class:list={[
+      "flex h-14 w-14 cursor-pointer items-center justify-center rounded-full text-white shadow-lg transition-all duration-200 active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 motion-reduce:transition-none",
+      buttonClass,
+    ]}
+  >
+    <svg
+      data-fab-icon
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      class="h-6 w-6 transition-transform duration-300 motion-reduce:transition-none"
+      aria-hidden="true"
+    >
+      <path d="M12 5v14M5 12h14"></path>
+    </svg>
+  </button>
+</div>
+
+<script>
+  type Cleanup = () => void;
+
+  const CLOSED_CLASSES = [
+    "pointer-events-none",
+    "translate-y-4",
+    "opacity-0",
+    "scale-95",
+  ];
+  const OPEN_CLASSES = [
+    "pointer-events-auto",
+    "translate-y-0",
+    "opacity-100",
+    "scale-100",
+  ];
+
+  function createFab(root: HTMLElement): Cleanup | null {
+    const btn = root.querySelector<HTMLButtonElement>("[data-fab-btn]");
+    const menu = root.querySelector<HTMLElement>("[data-fab-menu]");
+    const icon = root.querySelector<SVGElement>("[data-fab-icon]");
+    if (!btn || !menu || !icon) return null;
+
+    const openLabel = root.dataset.openLabel ?? "Abrir menu";
+    const closeLabel = root.dataset.closeLabel ?? "Fechar menu";
+
+    const abort = new AbortController();
+    const { signal } = abort;
+
+    const isOpen = () => btn.getAttribute("aria-expanded") === "true";
+
+    const setOpen = (open: boolean) => {
+      menu.classList.remove(...(open ? CLOSED_CLASSES : OPEN_CLASSES));
+      menu.classList.add(...(open ? OPEN_CLASSES : CLOSED_CLASSES));
+      menu.toggleAttribute("inert", !open);
+      icon.classList.toggle("rotate-45", open);
+      btn.setAttribute("aria-expanded", String(open));
+      btn.setAttribute("aria-label", open ? closeLabel : openLabel);
+    };
+
+    btn.addEventListener("click", () => setOpen(!isOpen()), { signal });
+
+    menu.addEventListener(
+      "click",
+      (event) => {
+        if (event.target instanceof Element && event.target.closest("a"))
+          setOpen(false);
+      },
+      { signal },
+    );
+
+    document.addEventListener(
+      "click",
+      (event) => {
+        if (isOpen() && !root.contains(event.target as Node)) setOpen(false);
+      },
+      { signal },
+    );
+
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Escape" && isOpen()) {
+          setOpen(false);
+          btn.focus();
+        }
+      },
+      { signal },
+    );
+
+    return () => abort.abort();
+  }
+
+  const instances = new Map<HTMLElement, Cleanup>();
+
+  function initFabs() {
+    document.querySelectorAll<HTMLElement>("[data-fab]").forEach((root) => {
+      if (instances.has(root)) return;
+      const cleanup = createFab(root);
+      if (cleanup) instances.set(root, cleanup);
+    });
+  }
+
+  function destroyFabs() {
+    instances.forEach((cleanup) => cleanup());
+    instances.clear();
+  }
+
+  document.addEventListener("astro:before-swap", destroyFabs);
+  document.addEventListener("astro:page-load", initFabs);
+</script>

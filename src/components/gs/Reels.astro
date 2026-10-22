@@ -1,0 +1,554 @@
+---
+import {
+  Heart,
+  MessageCircle,
+  Play,
+  Send,
+  Volume2,
+  VolumeX,
+} from "@lucide/astro";
+import { Image } from "astro:assets";
+
+export interface ReelItem {
+  /** URL do vídeo (.mp4) */
+  src: string;
+  /** Texto exibido abaixo do vídeo (máx. 2 linhas) */
+  caption: string;
+  /** Botão de ação do reel */
+  cta: { label: string; href: string };
+  /** Usado por leitores de tela. Se omitido, usa `caption` */
+  title?: string;
+}
+
+export interface ReelAccount {
+  /** Nome exibido, ex: "@minhaempresa" */
+  name: string;
+  /** Logo/avatar: caminho (string) ou objeto importado do Astro (ImageMetadata) */
+  avatar: ImageMetadata | string;
+  /** Texto alternativo do avatar. Padrão: "Logo de {name}" */
+  avatarAlt?: string;
+}
+
+export interface Props {
+  reels: ReelItem[];
+  account: ReelAccount;
+  /** Texto abaixo do nome. Padrão: "Patrocinado" */
+  sponsoredLabel?: string;
+  /** Aria-label do botão de iniciar. Padrão: "Assistir vídeos" */
+  startLabel?: string;
+}
+
+interface AvatarVariant {
+  class: string;
+  loading: "lazy" | "eager";
+  fetchpriority?: "high";
+}
+
+const {
+  reels,
+  account,
+  sponsoredLabel = "Patrocinado",
+  startLabel = "Assistir vídeos",
+} = Astro.props;
+
+const sideIcon =
+  "flex h-11 w-11 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm";
+const sideActions = [Heart, MessageCircle, Send] as const;
+
+const avatarBase = {
+  // O <Image> do Astro tipa `src` como uniões distintas (string vs ImageMetadata) e não aceita
+  // `string | ImageMetadata` de uma vez. Em runtime ele lida com os dois, então o cast é seguro.
+  src: account.avatar as ImageMetadata,
+  alt: account.avatarAlt ?? `Logo de ${account.name}`,
+  width: 40,
+  height: 40,
+} as const;
+const avatarClass = "h-10 w-10 rounded-full object-cover ring-2 ring-white/80";
+
+// Primeiro reel: duas variantes (mobile lazy / desktop eager + high priority) para o Lighthouse.
+const firstReelAvatars: AvatarVariant[] = [
+  { class: `block md:hidden ${avatarClass}`, loading: "lazy" },
+  {
+    class: `hidden md:block ${avatarClass}`,
+    loading: "eager",
+    fetchpriority: "high",
+  },
+];
+const defaultAvatars: AvatarVariant[] = [
+  { class: avatarClass, loading: "lazy" },
+];
+
+const hintId = `reel-hint-${crypto.randomUUID().slice(0, 8)}`;
+---
+
+<div
+  class="relative h-160 w-90 max-w-full shrink-0 overflow-hidden rounded-3xl bg-black shadow-2xl shadow-neutral-900/25 ring-1 ring-black/10 select-none"
+>
+  <p id={hintId} class="sr-only">
+    Pressione Enter ou Espaço para pausar ou continuar o vídeo.
+  </p>
+  <!-- Anuncia o estado de reprodução para leitores de tela -->
+  <p data-reel-status role="status" aria-live="polite" class="sr-only"></p>
+
+  <div
+    data-start-overlay
+    role="button"
+    tabindex="0"
+    class="absolute inset-0 z-30 flex items-center bg-black/50 justify-center cursor-pointer transition-opacity duration-300 focus-visible:outline focus-visible:-outline-offset-4 focus-visible:outline-white"
+    aria-label={startLabel}
+  >
+    <div
+      class="flex size-16 items-center justify-center rounded-full bg-black/70 shadow-2xl transition-transform hover:scale-110 active:scale-95"
+    >
+      <Play
+        class="size-8 stroke-white fill-white translate-x-0.5"
+        aria-hidden="true"
+      />
+    </div>
+  </div>
+
+  <div
+    data-reel-scroller
+    class="h-full w-full overflow-hidden touch-pan-y scrollbar-none [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+  >
+    {
+      reels.map((reel, i) => {
+        const label = reel.title ?? reel.caption;
+        return (
+          <article
+            data-reel
+            tabindex={i === 0 ? 0 : -1}
+            aria-describedby={hintId}
+            class="relative h-full w-full snap-start snap-always overflow-hidden cursor-pointer focus-visible:outline focus-visible:-outline-offset-4 focus-visible:outline-white"
+            aria-label={label}
+          >
+            <video
+              class="absolute inset-0 h-full w-full object-cover"
+              src={`${reel.src}#t=0.001`}
+              loop
+              muted
+              playsinline
+              preload="metadata"
+              aria-label={`Vídeo de demonstração: ${label}`}
+            />
+
+            {/* Indicador central de pausa (oculto por padrão) */}
+            <div
+              data-pause-indicator
+              class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center opacity-0 transition-opacity duration-200"
+            >
+              <div class="flex size-16 items-center justify-center rounded-full bg-black/70">
+                <Play
+                  class="size-8 stroke-white fill-white translate-x-0.5"
+                  aria-hidden="true"
+                />
+              </div>
+            </div>
+
+            {/* Header (contador / mute) */}
+            <div class="absolute inset-x-0 top-0 z-20 flex items-center justify-between bg-linear-to-b from-black/70 to-transparent px-4 pb-12 pt-4">
+              <span class="rounded-full bg-black/40 px-2.5 py-1 text-xs font-medium text-white/90 backdrop-blur-sm">
+                {i + 1}/{reels.length}
+              </span>
+              <button
+                type="button"
+                data-mute
+                aria-pressed="false"
+                aria-label="Ativar som"
+                class="group flex h-9 w-9 items-center justify-center rounded-full bg-black/40 backdrop-blur-sm transition-all duration-200 hover:scale-110 active:scale-95 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-white motion-reduce:transition-none"
+              >
+                <VolumeX
+                  class="h-5 w-5 stroke-white group-aria-pressed:hidden"
+                  aria-hidden="true"
+                />
+                <Volume2
+                  class="hidden h-5 w-5 stroke-white group-aria-pressed:block"
+                  aria-hidden="true"
+                />
+              </button>
+            </div>
+
+            <div class="absolute bottom-40 right-3 z-20 flex flex-col items-center gap-5">
+              {sideActions.map((Icon) => (
+                <span class={sideIcon}>
+                  <Icon class="h-6 w-6 stroke-white" aria-hidden="true" />
+                </span>
+              ))}
+            </div>
+
+            <div class="absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black/80 via-black/50 to-transparent px-4 pb-5 pt-20">
+              <div class="flex items-center gap-3">
+                {(i === 0 ? firstReelAvatars : defaultAvatars).map(
+                  (variant) => (
+                    <Image {...avatarBase} {...variant} />
+                  ),
+                )}
+                <div class="min-w-0 flex-1 leading-tight">
+                  <p class="truncate text-sm font-semibold text-white">
+                    {account.name}
+                  </p>
+                  <p class="text-[11px] text-white/60">{sponsoredLabel}</p>
+                </div>
+                <a
+                  href={reel.cta.href}
+                  class="rounded-lg bg-white px-4 py-2 text-xs font-bold text-black shadow-lg transition-all duration-200 hover:scale-105 hover:bg-neutral-200 active:scale-95 focus-visible:outline focus-visible:outline-offset-2 focus-visible:outline-white motion-reduce:transition-none"
+                >
+                  {reel.cta.label}
+                </a>
+              </div>
+              <p class="mt-3 line-clamp-2 pr-2 text-xs leading-snug text-white/90">
+                {reel.caption}
+              </p>
+            </div>
+          </article>
+        );
+      })
+    }
+  </div>
+</div>
+
+<script>
+  type Cleanup = () => void;
+
+  interface ReelRef {
+    article: HTMLElement;
+    video: HTMLVideoElement;
+    indicator: HTMLElement | null;
+  }
+
+  interface PlayerState {
+    autoplay: boolean;
+    userPaused: boolean;
+    soundOn: boolean;
+    activeIndex: number;
+    inView: boolean;
+  }
+
+  const ACTIVE_RATIO = 0.6;
+  const IN_VIEW_RATIO = 0.25;
+
+  const HIDDEN_CLASS = "opacity-0";
+  const LOCKED_CLASSES = ["overflow-hidden"] as const;
+  const UNLOCKED_CLASSES = [
+    "overflow-y-scroll",
+    "snap-y",
+    "snap-mandatory",
+  ] as const;
+
+  function collectReels(scroller: HTMLElement): ReelRef[] {
+    return Array.from(
+      scroller.querySelectorAll<HTMLElement>("[data-reel]"),
+    ).flatMap((article): ReelRef[] => {
+      const video = article.querySelector("video");
+      if (!video) return [];
+      return [
+        {
+          article,
+          video,
+          indicator: article.querySelector<HTMLElement>(
+            "[data-pause-indicator]",
+          ),
+        },
+      ];
+    });
+  }
+
+  type PlayResult = "ok" | "blocked" | "interrupted";
+
+  async function tryPlay(video: HTMLVideoElement): Promise<PlayResult> {
+    try {
+      await video.play();
+      return "ok";
+    } catch (error) {
+      return error instanceof DOMException && error.name === "NotAllowedError"
+        ? "blocked"
+        : "interrupted";
+    }
+  }
+
+  const prefersReducedMotion = () =>
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ------------------------------------------------------------------ */
+  /* Controller de uma instância                                         */
+  /* ------------------------------------------------------------------ */
+
+  function createReelsController(scroller: HTMLElement): Cleanup {
+    const wrapper = scroller.parentElement;
+    const overlay =
+      wrapper?.querySelector<HTMLElement>("[data-start-overlay]") ?? null;
+    const status =
+      wrapper?.querySelector<HTMLElement>("[data-reel-status]") ?? null;
+    const muteButtons = Array.from(
+      scroller.querySelectorAll<HTMLButtonElement>("[data-mute]"),
+    );
+    const reels = collectReels(scroller);
+
+    const state: PlayerState = {
+      autoplay: false,
+      userPaused: false,
+      soundOn: false,
+      activeIndex: 0,
+      inView: true,
+    };
+
+    const abort = new AbortController();
+    const { signal } = abort;
+
+    /* ---------- Efeitos de UI ---------- */
+
+    const applyScrollMode = () => {
+      LOCKED_CLASSES.forEach((cls) =>
+        scroller.classList.toggle(cls, !state.autoplay),
+      );
+      UNLOCKED_CLASSES.forEach((cls) =>
+        scroller.classList.toggle(cls, state.autoplay),
+      );
+    };
+
+    const applySound = () => {
+      reels.forEach(({ video }) => {
+        video.muted = !state.soundOn;
+      });
+      muteButtons.forEach((btn) => {
+        btn.setAttribute("aria-pressed", String(state.soundOn));
+        btn.setAttribute(
+          "aria-label",
+          state.soundOn ? "Desativar som" : "Ativar som",
+        );
+      });
+    };
+
+    const hideOverlay = () => {
+      if (!overlay) return;
+      overlay.classList.add(HIDDEN_CLASS, "pointer-events-none");
+      overlay.setAttribute("aria-hidden", "true");
+      overlay.setAttribute("inert", "");
+    };
+
+    /* ---------- Reprodução ---------- */
+
+    const playVideo = async (video: HTMLVideoElement) => {
+      video.muted = !state.soundOn;
+      const result = await tryPlay(video);
+      if (result === "blocked" && state.soundOn) {
+        state.soundOn = false;
+        applySound();
+        await tryPlay(video);
+      }
+    };
+
+    /**
+     * Reconcilia o DOM com o estado. É idempotente e pode ser chamada
+     * sempre que algo mudar (scroll, resize, visibilidade, clique...).
+     */
+    const syncPlayback = () => {
+      const canPlay = state.autoplay && state.inView && !document.hidden;
+
+      reels.forEach(({ article, video, indicator }, index) => {
+        const isActive = index === state.activeIndex;
+        indicator?.classList.toggle(
+          HIDDEN_CLASS,
+          !(state.userPaused && isActive),
+        );
+
+        // Roving tabindex: só o reel ativo entra na ordem de Tab.
+        article.tabIndex = isActive ? 0 : -1;
+
+        if (canPlay && isActive) {
+          if (video.paused) void playVideo(video);
+        } else if (!video.paused) {
+          video.pause();
+        }
+      });
+    };
+
+    const setPlaying = (playing: boolean) => {
+      state.autoplay = playing;
+      state.userPaused = !playing;
+      applyScrollMode();
+      syncPlayback();
+      if (status) status.textContent = playing ? "Reproduzindo" : "Pausado";
+    };
+
+    const start = () => {
+      const hadFocus = !!overlay && document.activeElement === overlay;
+      hideOverlay();
+      setPlaying(true);
+      if (hadFocus)
+        reels[state.activeIndex]?.article.focus({ preventScroll: true });
+    };
+
+    const togglePlayback = () => {
+      const active = reels[state.activeIndex];
+      if (!active) return;
+      setPlaying(active.video.paused);
+    };
+
+    const toggleSound = () => {
+      state.soundOn = !state.soundOn;
+      applySound();
+    };
+
+    /* ---------- Listeners ---------- */
+
+    overlay?.addEventListener("click", start, { signal });
+    overlay?.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        start();
+      },
+      { signal },
+    );
+
+    scroller.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        if (target.closest("[data-mute]")) {
+          toggleSound();
+          return;
+        }
+        if (target.closest("a, button")) return;
+        if (!target.closest("[data-reel]")) return;
+
+        togglePlayback();
+      },
+      { signal },
+    );
+
+    // Teclado: Enter / Espaço no próprio reel alternam play/pause.
+    // Só reage quando o foco está no <article>; Enter/Espaço nos botões e no
+    // link (mudo, CTA) mantêm o comportamento nativo e não disparam o toggle.
+    scroller.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        if (event.altKey || event.ctrlKey || event.metaKey || event.repeat)
+          return;
+
+        const target = event.target;
+        if (!(target instanceof HTMLElement) || !target.matches("[data-reel]"))
+          return;
+
+        event.preventDefault(); // evita o scroll da página com Espaço
+        togglePlayback();
+      },
+      { signal },
+    );
+
+    document.addEventListener("visibilitychange", syncPlayback, { signal });
+
+    // Botões externos [data-goto="n"] dentro do <main>.
+    const scope: EventTarget = scroller.closest("main") ?? document;
+    scope.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const trigger = target.closest<HTMLElement>("[data-goto]");
+        if (!trigger) return;
+
+        const requested = Number.parseInt(trigger.dataset.goto ?? "", 10);
+        if (Number.isNaN(requested) || reels.length === 0) return;
+
+        const index = Math.min(Math.max(requested, 0), reels.length - 1);
+        scroller.scrollTo({
+          top: index * scroller.clientHeight,
+          behavior: prefersReducedMotion() ? "auto" : "smooth",
+        });
+      },
+      { signal },
+    );
+
+    /* ---------- Observadores ---------- */
+
+    const indexByArticle = new Map<Element, number>(
+      reels.map((reel, index) => [reel.article, index]),
+    );
+
+    // Define qual reel está ativo.
+    const reelObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting || entry.intersectionRatio < ACTIVE_RATIO)
+            continue;
+          const index = indexByArticle.get(entry.target);
+          if (index !== undefined) state.activeIndex = index;
+        }
+        syncPlayback();
+      },
+      { root: scroller, threshold: ACTIVE_RATIO },
+    );
+    reels.forEach(({ article }) => reelObserver.observe(article));
+
+    // Pausa quando o player sai da tela (economiza bateria/dados) e retoma ao voltar.
+    const viewObserver = wrapper
+      ? new IntersectionObserver(
+          (entries) => {
+            const last = entries[entries.length - 1];
+            if (!last) return;
+            state.inView = last.isIntersecting;
+            syncPlayback();
+          },
+          { threshold: IN_VIEW_RATIO },
+        )
+      : null;
+    if (wrapper) viewObserver?.observe(wrapper);
+
+    const resizeObserver = new ResizeObserver(() => {
+      scroller.scrollTo({ top: state.activeIndex * scroller.clientHeight });
+    });
+    resizeObserver.observe(scroller);
+
+    /* ---------- Início ---------- */
+
+    reels.forEach(({ video }) => {
+      video.defaultMuted = true;
+    });
+    applySound();
+    applyScrollMode();
+
+    /* ---------- Limpeza ---------- */
+
+    return () => {
+      abort.abort();
+      reelObserver.disconnect();
+      viewObserver?.disconnect();
+      resizeObserver.disconnect();
+      reels.forEach(({ video }) => video.pause());
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Ciclo de vida (Astro View Transitions)                              */
+  /* ------------------------------------------------------------------ */
+
+  const instances = new Map<HTMLElement, Cleanup>();
+
+  function initReels() {
+    document
+      .querySelectorAll<HTMLElement>("[data-reel-scroller]")
+      .forEach((scroller) => {
+        if (instances.has(scroller)) return;
+        instances.set(scroller, createReelsController(scroller));
+      });
+  }
+
+  function destroyReels() {
+    instances.forEach((cleanup) => cleanup());
+    instances.clear();
+  }
+
+  // Interrompe o áudio assim que a navegação começa.
+  document.addEventListener("astro:before-preparation", () => {
+    document.querySelectorAll("video").forEach((video) => video.pause());
+  });
+  document.addEventListener("astro:before-swap", destroyReels);
+  document.addEventListener("astro:page-load", initReels);
+</script>

@@ -1,0 +1,94 @@
+---
+export interface Props {
+  /** Quantidade de bolhas. Padrão: 8 */
+  count?: number;
+  /** Quantas bolhas aparecem no mobile (até 640px). Padrão: 4 */
+  mobileCount?: number;
+  color?: string;
+  class?: string;
+}
+
+const {
+  count = 8,
+  mobileCount = 4,
+  color = "#a3c3e0",
+  class: className = "",
+} = Astro.props;
+
+const total = Math.max(0, Math.floor(count));
+
+const bubbles = Array.from({ length: total }, (_, i) => ({
+  left: (i * 37 + 8) % 92,
+  size: 16 + ((i * 13) % 30),
+  delay: -((i * 1.7) % 12),
+  duration: 10 + ((i * 3) % 6),
+  drift: (i % 2 === 0 ? 1 : -1) * (10 + ((i * 7) % 25)),
+  hideOnMobile: i >= mobileCount,
+}));
+---
+
+<div
+  class:list={["bubbles", className]}
+  style={`--c:${color}`}
+  aria-hidden="true"
+>
+  {
+    bubbles.map((b) => (
+      <span
+        class:list={{ "hide-mobile": b.hideOnMobile }}
+        style={`--l:${b.left}%;--s:${b.size}px;--d:${b.delay}s;--t:${b.duration}s;--x:${b.drift}px`}
+      />
+    ))
+  }
+</div>
+
+<style>
+  .bubbles {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+    container-type: size;
+  }
+
+  .bubbles span {
+    position: absolute;
+    bottom: -60px;
+    left: var(--l);
+    width: var(--s);
+    height: var(--s);
+    border-radius: 9999px;
+    background: radial-gradient(
+      circle at 30% 30%,
+      #fff,
+      color-mix(in oklab, var(--c) 25%, transparent)
+    );
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--c) 35%, transparent);
+    opacity: 0;
+    animation: bubble-rise var(--t) var(--d) linear infinite;
+    will-change: transform, opacity;
+  }
+
+  @keyframes bubble-rise {
+    10% {
+      opacity: 1;
+    }
+    to {
+      transform: translate3d(var(--x), calc(-100cqh - 60px), 0);
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .bubbles .hide-mobile {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bubbles {
+      display: none;
+    }
+  }
+</style>
