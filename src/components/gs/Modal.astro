@@ -1,0 +1,186 @@
+---
+interface Props {
+  id: string;
+  title: string;
+  size?: "sm" | "md" | "lg" | "xl" | "2xl";
+  triggerLabel?: string | null;
+  closeOnBackdrop?: boolean;
+  closeLabel?: string;
+  class?: string;
+}
+
+const {
+  id,
+  title,
+  size = "md",
+  triggerLabel = "Abrir modal",
+  closeOnBackdrop = true,
+  closeLabel = "Fechar",
+  class: className,
+} = Astro.props as Props;
+
+const sizes: Record<NonNullable<Props["size"]>, string> = {
+  sm: "sm:max-w-sm",
+  md: "sm:max-w-lg",
+  lg: "sm:max-w-2xl",
+  xl: "sm:max-w-4xl",
+  "2xl": "sm:max-w-6xl",
+};
+
+const titleId = `${id}-title`;
+const hasFooter = Astro.slots.has("footer");
+---
+
+{
+  triggerLabel !== null && (
+    <slot name="trigger">
+      <button
+        type="button"
+        class="py-3 px-4 inline-flex items-center gap-x-2 text-sm font-medium rounded-lg bg-primary border border-primary-line text-primary-foreground hover:bg-primary-hover focus:outline-hidden focus:bg-primary-focus disabled:opacity-50 disabled:pointer-events-none"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-controls={id}
+        data-modal-open={id}
+      >
+        {triggerLabel}
+      </button>
+    </slot>
+  )
+}
+
+<dialog
+  id={id}
+  data-modal
+  data-close-on-backdrop={closeOnBackdrop ? "true" : "false"}
+  aria-labelledby={titleId}
+  class:list={[
+    "m-auto w-[calc(100%-1.5rem)] max-h-[calc(100dvh-1.5rem)] p-0 bg-transparent text-inherit overflow-visible",
+    sizes[size],
+    "opacity-0 scale-95 transition-all transition-discrete duration-200 ease-in-out",
+    "open:opacity-100 open:scale-100 starting:open:opacity-0 starting:open:scale-95",
+    "backdrop:bg-black/50 backdrop:opacity-0 backdrop:transition-all backdrop:transition-discrete backdrop:duration-200",
+    "open:backdrop:opacity-100 starting:open:backdrop:opacity-0",
+    "motion-reduce:transition-none motion-reduce:backdrop:transition-none",
+  ]}
+>
+  <div
+    class:list={[
+      "w-full max-h-[inherit] flex flex-col bg-overlay border border-overlay-line shadow-2xs rounded-xl",
+      className,
+    ]}
+  >
+    <div
+      class="flex justify-between items-center py-3 px-4 border-b border-overlay-header"
+    >
+      <h3 id={titleId} class="font-semibold text-foreground">{title}</h3>
+      <button
+        type="button"
+        class="size-8 inline-flex justify-center items-center gap-x-2 rounded-full bg-surface border border-surface-line text-surface-foreground hover:bg-surface-hover focus:outline-hidden focus:bg-surface-focus disabled:opacity-50 disabled:pointer-events-none"
+        aria-label={closeLabel}
+        data-modal-close
+      >
+        <span class="sr-only">{closeLabel}</span>
+        <svg
+          class="shrink-0 size-4"
+          xmlns="http://www.w3.org/2000/svg"
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M18 6 6 18"></path>
+          <path d="m6 6 12 12"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div class="p-4 overflow-y-auto text-foreground">
+      <slot />
+    </div>
+
+    {
+      hasFooter && (
+        <div class="flex justify-end items-center gap-x-2 py-3 px-4 border-t border-overlay-footer">
+          <slot name="footer" />
+        </div>
+      )
+    }
+  </div>
+</dialog>
+
+<style is:global>
+  html:has(dialog[data-modal][open]) {
+    overflow: hidden;
+  }
+</style>
+
+<script>
+  const KEY = "__astroModalInit";
+
+  if (!(window as any)[KEY]) {
+    (window as any)[KEY] = true;
+
+    const setExpanded = (id: string, value: boolean) =>
+      document
+        .querySelectorAll<HTMLElement>(`[data-modal-open="${CSS.escape(id)}"]`)
+        .forEach((el) => el.setAttribute("aria-expanded", String(value)));
+
+    const open = (id: string) => {
+      const dialog = document.getElementById(id);
+      if (dialog instanceof HTMLDialogElement && !dialog.open) {
+        dialog.showModal();
+        setExpanded(id, true);
+        dialog.dispatchEvent(new CustomEvent("modal:open", { bubbles: true }));
+      }
+    };
+
+    document.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      const opener = target.closest<HTMLElement>("[data-modal-open]");
+      if (opener) {
+        const id = opener.dataset.modalOpen;
+        if (id) open(id);
+        return;
+      }
+
+      const closer = target.closest<HTMLElement>("[data-modal-close]");
+      if (closer) {
+        closer.closest<HTMLDialogElement>("dialog[data-modal]")?.close();
+        return;
+      }
+
+      if (
+        target instanceof HTMLDialogElement &&
+        target.hasAttribute("data-modal") &&
+        target.dataset.closeOnBackdrop !== "false"
+      ) {
+        target.close();
+      }
+    });
+
+    document.addEventListener(
+      "close",
+      (e) => {
+        const dialog = e.target;
+        if (dialog instanceof HTMLDialogElement && dialog.hasAttribute("data-modal")) {
+          setExpanded(dialog.id, false);
+          dialog.dispatchEvent(new CustomEvent("modal:close", { bubbles: true }));
+        }
+      },
+      true,
+    );
+
+    document.addEventListener("astro:before-swap", () => {
+      document
+        .querySelectorAll<HTMLDialogElement>("dialog[data-modal][open]")
+        .forEach((d) => d.close());
+    });
+  }
+</script>
